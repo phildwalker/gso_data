@@ -10,3 +10,8 @@
 # GSO oarcgis
 # http://www.arcgis.com/home/webmap/viewer.html?url=https%3A%2F%2Fgis.greensboro-nc.gov%2Farcgis%2Frest%2Fservices%2FPlanning%2FParcels_Ownership_Census_MyGov%2FMapServer&source=sd
 
+# GSO building inspection information
+# https://gis.greensboro-nc.gov/arcgis/rest/services/EngineeringInspections/BImap_MS/MapServer/10
+
+# https://gis.greensboro-nc.gov/arcgis/rest/services/GISDivision/CityCountyBldgs_MS/MapServer
+
