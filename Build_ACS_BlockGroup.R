@@ -3,7 +3,7 @@
 
 # Helpful to get a more detailed view than the SVI
 
-
+library(tidycensus)
 
 
 
