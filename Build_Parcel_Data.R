@@ -44,8 +44,6 @@ parcel_dat <-
   }) #reads in the data, and _dfr combines them together
 
 
-parcel_group1 <- parcel_dat[1:10000]
-
 save(parcel_dat, file = here::here("data", "parcels", "parcel_info.rda"))
 
 
