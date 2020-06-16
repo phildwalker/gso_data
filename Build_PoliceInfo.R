@@ -27,10 +27,10 @@ NIBRS <- tibble::tibble(
 
 # NIBRS$path[2]  
 
-gisExtract <- function(path){
-  out <- jsonlite::fromJSON(readLines(path, warn=F))
-  out2 <- out$results$attributes
-}
+# gisExtract <- function(path){
+#   out <- jsonlite::fromJSON(readLines(path, warn=F))
+#   out2 <- out$results$attributes
+# }
 
 
 NIBRS$path[1:3]
