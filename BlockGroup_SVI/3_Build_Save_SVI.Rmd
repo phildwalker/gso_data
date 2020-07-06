@@ -1,0 +1,131 @@
+---
+title: "CDC SVI // Build and Save SVI on Block Group"
+author: "Enterprise Analytics"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y')) `"
+keywords: 
+  - ACS
+  - CDC SVI
+output: 
+  eaverse::ea_report:
+    analyst: 
+    - "P. Walker"
+    email: "philip.walker@conehealth.com"
+    draft: true
+    code_folding: "show" # one of "show", "hide", or "none"
+    code_download: FALSE # TRUE to allow the Rmd to be downloaded or FALSE
+# knit: eaverse::knit_ea_letter
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+#knitr::opts_chunk$set(fig.align = 'center')
+library(tidyverse)
+library(kableExtra)
+library(eaverse)
+library(sf)
+library(tigris)
+# To Turn off Scientific Notation Use this.
+options(scipen = 999)
+
+# This cleans up numbers to add decimal places
+knitr::knit_hooks$set(inline = clean_numbers,
+                      dropdown = knit_dropdown,
+                      chunk = ea_hooks)
+```
+
+```{r}
+load(file = here::here("data", "CombinedSVI.rda"))
+
+```
+
+```{r}
+
+ColList <- colnames(CombinedSVI) %>% 
+  as_tibble() %>% 
+  filter(str_detect(value, "Pctl_"))
+
+```
+
+
+```{r}
+SVI_orig <- st_read(here::here("data-raw","NorthCarolina","SVI2018_NORTHCAROLINA_tract.shp"))
+
+counties <- c("Guilford" ) #"Randolph", "Rockingham", "Alamance", "Forsyth", 
+
+CONE_serv <- SVI_orig %>% 
+  filter(COUNTY %in% counties,
+         !E_TOTPOP == 0)
+
+```
+
+
+```{r}
+
+SVI <-
+  CombinedSVI %>% 
+  mutate(GEOID = as.character(glue::glue("{state}{county}{tract}{block_group}"))) %>% 
+  rowwise() %>% 
+  mutate(TotalPercentile = sum(c_across(cols = starts_with("Pctl_")))) %>%
+  ungroup() %>% 
+  mutate(PCT = ntile(TotalPercentile, 100)/100)
+  
+SVI %>% 
+  ggplot(aes(TotalPercentile))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  # scale_x_continuous(labels = scales::percent_format())+
+  labs(title = "Distribution of Summed Percentile Scores",
+       x = "Summed Percentile Scores")
+
+```
+
+
+```{r}
+load(file= here::here("data", "BG_SF.rda"))
+
+SVI_sf <- geo_join(BG_SF, SVI, "GEOID", "GEOID")
+
+SVI_sf <- st_as_sf(SVI_sf)
+
+mapview::mapview(SVI_sf,  zcol = "PCT", layer.name = c("PCT")) +
+  mapview::mapview(CONE_serv,  zcol = "RPL_THEMES", layer.name = c("Orig"))
+
+
+save(SVI_sf, file = here::here("data", "SVI_sf.rda"))
+
+```
+
+
+Building a list of the top block groups in greensboro
+
+```{r}
+SVI_sf %>% 
+  mutate(TRACTCE = as.numeric(TRACTCE)) %>% 
+  filter(TRACTCE < 900000) %>% 
+  filter(TRACTCE < 13600) %>% 
+  mapview::mapview(zcol = "PCT") +
+    mapview::mapview(CONE_serv,  zcol = "RPL_THEMES", layer.name = c("Orig"), col.regions = "grey" )
+
+```
+
+
+```{r}
+
+GSO_SVI <- 
+  SVI_sf %>% 
+  mutate(TRAC = as.numeric(TRACTCE)) %>% 
+  filter(TRAC < 13600)
+
+save(GSO_SVI, file = here::here("data", "GSO_SVI.rda"))
+
+
+```
+
+
+
+
+
+
+
+

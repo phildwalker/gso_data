@@ -1,0 +1,699 @@
+---
+title: "CDC SVI // Clean ACS Data"
+author: "Enterprise Analytics"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y')) `"
+keywords: 
+  - ACS
+  - CDC SVI
+output: 
+  eaverse::ea_report:
+    analyst: 
+    - "P. Walker"
+    email: "philip.walker@conehealth.com"
+    draft: true
+    code_folding: "show" # one of "show", "hide", or "none"
+    code_download: FALSE # TRUE to allow the Rmd to be downloaded or FALSE
+# knit: eaverse::knit_ea_letter
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+#knitr::opts_chunk$set(fig.align = 'center')
+library(tidyverse)
+library(kableExtra)
+library(eaverse)
+library(patchwork)
+# To Turn off Scientific Notation Use this.
+options(scipen = 999)
+
+# This cleans up numbers to add decimal places
+knitr::knit_hooks$set(inline = clean_numbers,
+                      dropdown = knit_dropdown,
+                      chunk = ea_hooks)
+```
+
+```{r}
+
+load(file = here::here("data", "ACS_codes.rda"))
+
+```
+
+# Group: Overall{.tabset .tabset-pills}
+
+## Total Population
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+
+load(here::here("data", "E_TOTPOP.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+# E_TOTPOP <-
+#   E_TOTPOP %>% 
+#   mutate(PCT = ntile(values, 100)/100)
+
+# Perct <- E_TOTPOP %>% 
+#    ggplot(aes(PCT))+
+#    geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+#    scale_x_continuous(labels = scales::percent_format())+
+#    labs(subtitle = "By Count at Percentile Group")
+
+ValueP <- E_TOTPOP %>% 
+  ggplot(aes(values))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  # scale_x_continuous(labels = scales::percent_format())+
+  labs(
+       subtitle = "By Count of Counties in at value range")
+
+# Perct + 
+  ValueP +
+  plot_annotation(title = "Distribution of Population")
+
+```
+
+
+## Housing Units Per Blockgroup
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_HU.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+# E_HU <-
+#   E_HU %>% 
+#   mutate(PCT = ntile(values, 100)/100)
+
+ValueP <- E_HU %>% 
+  ggplot(aes(values))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  # scale_x_continuous(labels = scales::percent_format())+
+  labs(title = "Distribution of Housing Units",
+       subtitle = "By Count of Counties in at value range")
+
+ValueP
+
+```
+
+## Household Estimates Per Blockgroup
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_HH.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+# E_HH <-
+#   E_HH %>% 
+#   mutate(PCT = ntile(values, 100)/100)
+
+ValueP <- E_HH %>% 
+  ggplot(aes(values))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  # scale_x_continuous(labels = scales::percent_format())+
+  labs(title = "Distribution of Household Estimates",
+       subtitle = "By Count at value range")
+
+ValueP
+
+```
+
+
+
+# Group: SES  {.tabset .tabset-pills}
+
+## Persons below poverty estimate Per Blockgroup
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_POV.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_POV <-
+  E_POV %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumPov = sum(values)) %>% 
+  ungroup() %>%   
+  left_join(., 
+            E_TOTPOP %>% select(NAME, pop = values), 
+            by = c("NAME")) %>% 
+  mutate(PercPopBelow = SumPov/pop,
+         PCT = ntile(PercPopBelow, 100)/100)
+
+ValueP <- E_POV %>% 
+  ggplot(aes(PercPopBelow))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution of Persons below poverty estimate")
+
+```
+
+
+
+## Unemployment
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_UNEMP.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_UNEMP <-
+  E_UNEMP %>% 
+  left_join(., 
+            E_TOTPOP %>% select(NAME, pop = values), 
+            by = c("NAME")) %>% 
+  mutate(PercPopUnEmp = values/pop,
+         PCT = ntile(PercPopUnEmp, 100)/100)
+
+ValueP <- E_UNEMP %>% 
+  ggplot(aes(PercPopUnEmp))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution of Persons below poverty estimate")
+
+```
+
+
+## Income Level
+Per Capita Income
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_PCI.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_PCI <-
+  E_PCI %>% 
+  mutate(PCT = ntile(values, 100)/100) %>% 
+  mutate(PCT = 1 - PCT)
+
+ValueP <- E_PCI %>% 
+  ggplot(aes(values))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  # scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution of Per Captia Income")
+
+
+```
+
+
+
+## No High School Diploma
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_NOHSDP.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_NOHSDP <-
+  E_NOHSDP %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumNoDP = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% group_by(tract) %>% summarise(pop = sum(values)), 
+            by = c("tract")) %>% 
+  mutate(PercNoDP = SumNoDP/pop,
+         PCT = ntile(PercNoDP, 100)/100)
+
+ValueP <- E_NOHSDP %>% 
+  ggplot(aes(PercNoDP))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution of Percentage of Block Group Without HS Diploma")
+
+
+```
+
+
+
+# Group: Household Composition  {.tabset .tabset-pills}
+
+## Older than 65
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_AGE65.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_AGE65 <-
+  E_AGE65 %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumOlder = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% select(NAME, pop = values), 
+            by = c("NAME")) %>% 
+  mutate(PercPopOlder= SumOlder/pop,
+         PCT = ntile(PercPopOlder, 100)/100)
+
+ValueP <- E_AGE65 %>% 
+  ggplot(aes(PercPopOlder))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Above 65")
+
+
+```
+
+
+
+## Younger than 17
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_AGE17.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_AGE17 <-
+  E_AGE17 %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumYoung = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% select(NAME, pop = values), 
+            by = c("NAME")) %>% 
+  mutate(PercPopYounger= SumYoung/pop,
+         PCT = ntile(PercPopYounger, 100)/100)
+
+ValueP <- E_AGE17 %>% 
+  ggplot(aes(PercPopYounger))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Below 17")
+
+
+```
+
+## Older than 5 with a disability
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_DISABL.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_DISABL <-
+  E_DISABL %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumDisab = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% group_by(tract) %>% summarise(pop = sum(values)), 
+            by = c("tract")) %>% 
+  mutate(PercDisab = SumDisab/pop,
+         PCT = ntile(PercDisab, 100)/100)
+
+ValueP <- E_DISABL %>% 
+  ggplot(aes(PercDisab))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Disabled Population")
+
+
+```
+
+
+## Single Parent Household
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_SNGPNT.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_SNGPNT <-
+  E_SNGPNT %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumSngl = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_HH %>% select(NAME, HH = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHH_Sing= SumSngl/HH,
+         PCT = ntile(PercHH_Sing, 100)/100)
+
+ValueP <- E_SNGPNT %>% 
+  ggplot(aes(PercHH_Sing))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Single Parents")
+
+
+```
+
+# Group: Minorty status {.tabset .tabset-pills}
+
+## Minority
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_MINRTY.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_MINRTY <-
+  E_MINRTY %>% 
+  left_join(., 
+            E_TOTPOP %>% group_by(tract) %>% summarise(pop = sum(values)), 
+            by = c("tract")) %>% 
+  mutate(PercPop_Mino=  values/pop,
+         PCT = ntile(PercPop_Mino, 100)/100)
+
+ValueP <- E_MINRTY %>% 
+  ggplot(aes(PercPop_Mino))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Tract Minority")
+
+
+```
+
+## Speak English "less than well"
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_LIMENG.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_LIMENG <-
+  E_LIMENG %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumSpeak = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% select(NAME, pop = values), 
+            by = c("NAME")) %>% 
+  mutate(PercPop_Speak= SumSpeak/pop,
+         PCT = ntile(PercPop_Speak, 100)/100)
+
+ValueP <- E_LIMENG %>% 
+  ggplot(aes(PercPop_Speak))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Speak English Less than Well")
+
+
+```
+
+
+
+# Group: Housing Type and Transportation {.tabset .tabset-pills}
+
+## Multi-unit structures
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_MUNIT.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_MUNIT <-
+  E_MUNIT %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumMultUN = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_HU %>% select(NAME, HU = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHU_MULT= SumMultUN/HU,
+         PCT = ntile(PercHU_MULT, 100)/100)
+
+ValueP <- E_MUNIT %>% 
+  ggplot(aes(PercHU_MULT))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Multi Units")
+
+
+```
+
+
+## Mobile Homes
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_MOBILE.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_MOBILE <-
+  E_MOBILE %>% 
+  # select(-vars) %>% 
+  # group_by_at(vars(-values)) %>%
+  # summarize(SumMultUN = sum(values)) %>% 
+  # ungroup() %>% 
+  left_join(., 
+            E_HU %>% select(NAME, HU = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHU_Mobl= values/HU,
+         PCT = ntile(PercHU_Mobl, 100)/100)
+
+ValueP <- E_MOBILE %>% 
+  ggplot(aes(PercHU_Mobl))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Mobile Homes")
+
+
+```
+
+## Crowding
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_CROWD.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_CROWD <-
+  E_CROWD %>% 
+  select(-vars) %>%
+  group_by_at(vars(-values)) %>%
+  summarize(SumCrowd= sum(values)) %>%
+  ungroup() %>%
+  left_join(., 
+            E_HU %>% select(NAME, HU = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHU_Crowd= SumCrowd/HU,
+         PCT = ntile(PercHU_Crowd, 100)/100)
+
+ValueP <- E_CROWD %>% 
+  ggplot(aes(PercHU_Crowd))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Crowded Housing")
+
+
+```
+
+## No vehicles
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_NOVEH.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_NOVEH <-
+  E_NOVEH %>% 
+  select(-vars) %>%
+  group_by_at(vars(-values)) %>%
+  summarize(SumNoVa= sum(values)) %>%
+  ungroup() %>%
+  left_join(., 
+            E_HU %>% select(NAME, HU = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHU_nova= SumNoVa/HU,
+         PCT = ntile(PercHU_nova, 100)/100)
+
+ValueP <- E_NOVEH %>% 
+  ggplot(aes(PercHU_nova))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Housing with no Vehic")
+
+
+```
+
+
+## Group Quarters
+
+```{r, fig.width=12, fig.height=5, out.width="100%"}
+# rm(longACS)
+load(here::here("data", "E_GROUPQ.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_GROUPQ <-
+  E_GROUPQ %>% 
+  left_join(., 
+            E_TOTPOP %>% group_by(tract) %>% summarise(pop = sum(values)), 
+            by = c("tract")) %>% 
+  mutate(PercPop_GQ= values/pop,
+         PCT = ntile(PercPop_GQ, 100)/100)
+
+ValueP <- E_GROUPQ %>% 
+  ggplot(aes(PercPop_GQ))+
+  geom_histogram(bins=10, fill='#69b3a2', color='white') + 
+  scale_x_continuous(labels = scales::percent_format())+
+  labs(#subtitle = "Percent of Population Estimated Below Poverty",
+       y=NULL, x=NULL)
+
+ValueP +
+  plot_annotation(title = "Distribution Block Group Housing with Group Quarters")
+
+
+```
+
+
+
+# Combine datasets
+
+```{r}
+
+
+CombinedSVI <-
+  left_join(E_TOTPOP %>% select(-vars, -SVI_metric, -SVI_group, POP = values),
+            E_HU %>% select(-vars, -SVI_metric, -SVI_group, HU = values),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  left_join(., 
+            E_HH %>% select(-vars, -SVI_metric, -SVI_group, HH = values),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  # Pulling in the Socioexonomic Status related variables
+  left_join(.,
+            E_POV %>% select(-SVI_metric, -SVI_group, -pop, Count_Poverty = SumPov, Pctl_POV  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  left_join(.,
+            E_UNEMP %>% select(-SVI_metric, -SVI_group, -pop, -vars, Count_UnEMP = values, Pctl_unEMP  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME"))  %>% 
+  left_join(.,
+            E_PCI %>% select(-SVI_metric, -SVI_group, -vars, PCI = values, Pctl_PCI  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME"))   %>% 
+  left_join(.,
+            E_NOHSDP %>% select(-SVI_metric, -SVI_group, -NAME, -pop, Count_NoHSDipl = SumNoDP, Pctl_NoHSDipl  = PCT),
+              by = c("state", "county", "tract")) %>%
+  # Pulling in the Household Composition and Disability related variables  
+  left_join(.,
+            E_AGE65 %>% select(-SVI_metric, -SVI_group, -pop,  Count_Older65 = SumOlder, Pctl_Older65  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME"))  %>% 
+  left_join(.,
+            E_AGE17 %>% select(-SVI_metric, -SVI_group, -pop, Count_Young17 = SumYoung, Pctl_Young17  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  left_join(.,
+            E_DISABL %>% select(-SVI_metric, -SVI_group, -NAME, -pop, Count_Disabled = SumDisab, Pctl_Disabled  = PCT),
+              by = c("state", "county", "tract")) %>%
+  left_join(.,
+            E_SNGPNT %>% select(-SVI_metric, -SVI_group, -HH, Count_SnglPrnt = SumSngl, Pctl_SnglPrnt  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  # Pulling in  Minority Status and Language
+  left_join(.,
+            E_MINRTY %>% select(-SVI_metric, -SVI_group, -NAME,-vars,  -pop, Count_Minority = values, Pctl_Minority  = PCT),
+              by = c("state", "county", "tract")) %>%
+  left_join(.,
+            E_LIMENG %>% select(-SVI_metric, -SVI_group, -pop, Count_LessEnglish = SumSpeak, Pctl_LessEnglish  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  # Pulling in Housing Type and Transportation
+  left_join(.,
+            E_MUNIT %>% select(-SVI_metric, -SVI_group, -HU, Count_MultUnit = SumMultUN, Pctl_MultUnit  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  left_join(.,
+            E_MOBILE %>% select(-SVI_metric, -SVI_group, -vars, -HU, Count_MobileH = values, Pctl_MobileH  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  left_join(.,
+            E_CROWD %>% select(-SVI_metric, -SVI_group, -HU, Count_Crowd = SumCrowd, Pctl_Crowd  = PCT),
+              by = c("state", "county", "tract", "block_group", "NAME")) %>% 
+  left_join(.,
+            E_GROUPQ %>% select(-SVI_metric, -SVI_group, -NAME, -pop, -vars, Count_GroupQtr = values, Pctl_GroupQtr  = PCT),
+              by = c("state", "county", "tract"))
+
+
+
+save(CombinedSVI, file = here::here("data", "CombinedSVI.rda"))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

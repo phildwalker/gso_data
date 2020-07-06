@@ -1,0 +1,288 @@
+---
+title: "CDC SVI // Looking into metrics"
+author: "Enterprise Analytics"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y')) `"
+keywords: 
+  - ACS
+  - CDC SVI
+output: 
+  eaverse::ea_report:
+    analyst: 
+    - "P. Walker"
+    email: "philip.walker@conehealth.com"
+    draft: true
+    code_folding: "show" # one of "show", "hide", or "none"
+    code_download: FALSE # TRUE to allow the Rmd to be downloaded or FALSE
+# knit: eaverse::knit_ea_letter
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+#knitr::opts_chunk$set(fig.align = 'center')
+library(tidyverse)
+library(kableExtra)
+library(leaflet)
+library(eaverse)
+library(tigris)
+library(mapview)
+library(sf)
+
+# To Turn off Scientific Notation Use this.
+options(scipen = 999)
+
+# This cleans up numbers to add decimal places
+knitr::knit_hooks$set(inline = clean_numbers,
+                      dropdown = knit_dropdown,
+                      chunk = ea_hooks)
+```
+
+```{r}
+block_groups <- block_groups(state = "NC", county = "Guilford") # 29 MB file
+
+
+BG_SF <- st_as_sf(block_groups)
+
+BG_SF <-
+  BG_SF %>% 
+  mutate(TractID = as.character(glue::glue("{STATEFP}{COUNTYFP}{TRACTCE}")))
+
+save(BG_SF, file= here::here("data", "BG_SF.rda"))
+
+# class(BG_SF)
+```
+
+# Per Capita Income
+
+```{r}
+
+load(here::here("data", "E_PCI.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_PCI <-
+  E_PCI %>% 
+  mutate(PCT = ntile(values, 100)/100,
+         GEOID = glue::glue("{state}{county}{tract}{block_group}"),
+         GEOID = as.character(GEOID)) %>% 
+  as_tibble()
+```
+
+
+Join the metric value to the shapefile
+
+```{r}
+
+PCI <- geo_join(block_groups, E_PCI, "GEOID", "GEOID")
+
+PCI <- st_as_sf(PCI)
+
+class(PCI)
+
+```
+
+
+map it 
+
+```{r}
+
+mapview(PCI,  zcol = "PCT", layer.name = c("PCI Percentile")) +
+  mapview(PCI,  zcol = "values", layer.name = c("PCI"))
+
+```
+
+
+# Disabled
+
+```{r}
+load(here::here("data", "E_DISABL.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_DISABL <-
+  E_DISABL %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumDisab = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% group_by(tract) %>% summarise(pop = sum(values)), 
+            by = c("tract")) %>% 
+  mutate(PercDisab = SumDisab/pop,
+         PCT = ntile(PercDisab, 100)/100) %>% 
+  mutate(TractID = as.character(glue::glue("{state}{county}{tract}")))
+
+```
+
+Join on tract and map
+
+```{r}
+
+DISABL <- geo_join(BG_SF, E_DISABL, "TractID", "TractID")
+
+DISABL <- st_as_sf(DISABL)
+
+
+mapview(DISABL,  zcol = "PercDisab", layer.name = c("% Disabled"))
+
+
+```
+
+# Minority
+
+```{r}
+load(here::here("data", "E_MINRTY.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_MINRTY <-
+  E_MINRTY %>% 
+  left_join(., 
+            E_TOTPOP %>% group_by(tract) %>% summarise(pop = sum(values)), 
+            by = c("tract")) %>% 
+  mutate(PercPop_Mino= 1 - values/pop,
+         PCT = ntile(PercPop_Mino, 100)/100) %>% 
+  mutate(TractID = as.character(glue::glue("{state}{county}{tract}")))
+
+```
+
+```{r}
+MRNTY <- geo_join(BG_SF, E_MINRTY, "TractID", "TractID")
+
+MRNTY <- st_as_sf(MRNTY)
+
+
+mapview(MRNTY,  zcol = "PercPop_Mino", layer.name = c("% Minority"))
+```
+
+
+# Speak less than well
+
+```{r}
+load(here::here("data", "E_LIMENG.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_LIMENG <-
+  E_LIMENG %>% 
+  select(-vars) %>% 
+  group_by_at(vars(-values)) %>%
+  summarize(SumSpeak = sum(values)) %>% 
+  ungroup() %>% 
+  left_join(., 
+            E_TOTPOP %>% select(NAME, pop = values), 
+            by = c("NAME")) %>% 
+  mutate(PercPop_Speak= SumSpeak/pop,
+         PCT = ntile(PercPop_Speak, 100)/100) %>% 
+  mutate(GEOID = as.character(glue::glue("{state}{county}{tract}{block_group}")))
+
+
+```
+
+
+```{r}
+LimEng <- geo_join(BG_SF, E_LIMENG, "GEOID", "GEOID")
+
+LimEng <- st_as_sf(LimEng)
+
+
+mapview(LimEng,  zcol = "PercPop_Speak", layer.name = c("% Speak Less English"))
+```
+
+
+
+# Mobile Homes
+
+```{r}
+load(here::here("data", "E_MOBILE.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_MOBILE <-
+  E_MOBILE %>% 
+  # select(-vars) %>% 
+  # group_by_at(vars(-values)) %>%
+  # summarize(SumMultUN = sum(values)) %>% 
+  # ungroup() %>% 
+  left_join(., 
+            E_HU %>% select(NAME, HU = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHU_Mobl= values/HU,
+         PCT = ntile(PercHU_Mobl, 100)/100) %>% 
+  mutate(GEOID = as.character(glue::glue("{state}{county}{tract}{block_group}")))
+
+```
+
+```{r}
+MOBL <- geo_join(BG_SF, E_MOBILE, "GEOID", "GEOID")
+
+MOBL <- st_as_sf(MOBL)
+
+mapview(MOBL,  zcol = "PercHU_Mobl", layer.name = c("% Mobile Homes"))
+
+```
+
+
+
+
+
+
+# No vehicle for the household
+
+```{r}
+load(here::here("data", "E_NOVEH.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_NOVEH <-
+  E_NOVEH %>% 
+  select(-vars) %>%
+  group_by_at(vars(-values)) %>%
+  summarize(SumNoVa= sum(values)) %>%
+  ungroup() %>%
+  left_join(., 
+            E_HU %>% select(NAME, HU = values), 
+            by = c("NAME")) %>% 
+  mutate(PercHU_nova= SumNoVa/HU,
+         PCT = ntile(PercHU_nova, 100)/100) %>% 
+  mutate(GEOID = as.character(glue::glue("{state}{county}{tract}{block_group}")))
+
+```
+
+
+```{r}
+nova <- geo_join(BG_SF, E_NOVEH, "GEOID", "GEOID")
+
+nova <- st_as_sf(nova)
+
+mapview(nova,  zcol = "PercHU_nova", layer.name = c("% No Vehicle"))
+```
+
+
+# Housing Units
+
+```{r}
+load(here::here("data", "E_HU.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+E_HU <- 
+  E_HU %>% 
+  filter(values <= 0) %>% 
+  mutate(GEOID = as.character(glue::glue("{state}{county}{tract}{block_group}")))
+  
+HU <- geo_join(BG_SF, E_HU, "GEOID", "GEOID")
+
+HU <- st_as_sf(HU)
+
+mapview(HU,  zcol = "values", layer.name = c("Count Housing Units"))
+
+```
+
+
+
+
+
+
+

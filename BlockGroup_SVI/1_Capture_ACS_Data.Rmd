@@ -1,0 +1,130 @@
+---
+title: "CDC SVI // Pull ACS Data"
+author: "Enterprise Analytics"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y')) `"
+keywords: 
+  - ACS
+  - CDC SVI
+output: 
+  eaverse::ea_report:
+    analyst: 
+    - "P. Walker"
+    email: "philip.walker@conehealth.com"
+    draft: true
+    code_folding: "show" # one of "show", "hide", or "none"
+    code_download: FALSE # TRUE to allow the Rmd to be downloaded or FALSE
+# knit: eaverse::knit_ea_letter
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+#knitr::opts_chunk$set(fig.align = 'center')
+library(tidyverse)
+library(kableExtra)
+# library(leaflet)
+library(eaverse)
+library(censusapi)
+
+# To Turn off Scientific Notation Use this.
+options(scipen = 999)
+
+# This cleans up numbers to add decimal places
+knitr::knit_hooks$set(inline = clean_numbers,
+                      dropdown = knit_dropdown,
+                      chunk = ea_hooks)
+```
+
+
+Look up table for ACS codes
+
+```{r}
+
+ACS_codes <- tibble::tribble(
+  ~group, ~name, ~geoLevel, ~code, 
+  "overall", "E_TOTPOP", "block group", list("B01003_001E"), 
+  "overall", "E_HU", "block group", list("B25001_001E"),
+  "overall", "E_HH", "block group", list("B11001_001E"), 
+  "SES", "E_POV", "block group", list("C17002_002E", "C17002_003E"), 
+  "SES", "E_UNEMP", "block group", list("B23025_005E"), 
+  "SES", "E_PCI", "block group", list("B19301_001E"), 
+  'SES', "E_NOHSDP", "tract", list("B06009_002E"), 
+  "household comp", "E_AGE65", "block group", list("B01001_044E", "B01001_045E", "B01001_046E", "B01001_047E", "B01001_048E", "B01001_049E", "B01001_020E", "B01001_021E", "B01001_022E", "B01001_023E", "B01001_024E", "B01001_025E"), 
+  "household comp", "E_AGE17", "block group", list("B01001_027E", "B01001_028E", "B01001_029E", "B01001_030E", "B01001_003E", "B01001_004E", "B01001_005E", "B01001_006E"), 
+  "household comp", "E_DISABL", "tract", list("C18131_003E", "C18131_015E", "C18131_012E", "C18131_009E", "C18131_006E"), 
+  "household comp", "E_SNGPNT", "block group", list("B11005_006E", "B11005_007E"), 
+  "minorty status", "E_MINRTY", "tract", list("B01001H_001E"), 
+  "minorty status", "E_LIMENG", "block group", list("B16004_040E", "B16004_039E", "B16004_035E", "B16004_034E", "B16004_045E", "B16004_044E", "B16004_030E", "B16004_029E", "B16004_018E", "B16004_017E", "B16004_013E", "B16004_012E", "B16004_023E", "B16004_022E", "B16004_008E", "B16004_007E", "B16004_062E", "B16004_061E", "B16004_057E", "B16004_056E", "B16004_067E", "B16004_066E", "B16004_052E", "B16004_051E"), 
+  "housing type transpo", "E_MUNIT", "block group", list("B25024_007E", "B25024_008E", "B25024_009E"), 
+  "housing type transpo", "E_MOBILE", "block group", list("B25024_010E"), 
+  "housing type transpo", "E_CROWD", "block group", list("B25015_005E", "B25015_006E", "B25015_009E", "B25015_010E", "B25015_013E", "B25015_014E", "B25015_018E", "B25015_019E", "B25015_022E", "B25015_023E", "B25015_026E", "B25015_027E"), 
+  "housing type transpo", "E_NOVEH", "block group", list("B25044_003E", "B25044_010E"), 
+  "housing type transpo", "E_GROUPQ", "tract", list("B26001_001E")
+)
+
+# ACS_codes$code[1]
+
+save(ACS_codes, file = here::here("data", "ACS_codes.rda"))
+
+```
+
+Pulling data from ACS API 
+
+Function below create a new table by 
+```{r}
+
+
+ACSdata <- function(i = 10){
+  vars <- dput(as.character(ACS_codes$code[[i]]))
+  
+  acs_main <- getCensus(name = "acs/acs5",
+      vintage = 2018,
+      vars = c("NAME", vars), #dput(as.character(ACS_codes$code[[i]]))
+      region = dput(paste0(ACS_codes$geoLevel[[i]],":*")),
+      regionin = "state:37+county:081")
+  
+  longACS <- 
+    acs_main %>%
+    pivot_longer(cols = starts_with(substring(ACS_codes$code[[i]][[1]],1,1),ignore.case = F), 
+                 names_to = "vars", values_to = "values") %>%
+    filter(values >= 0) %>%
+    mutate(SVI_metric = ACS_codes$name[[i]],
+         SVI_group = ACS_codes$group[[i]])
+  
+  save(longACS, file = here::here("data", paste0(ACS_codes$name[[i]],".rda")))
+
+}
+
+
+```
+
+
+Looping through data to create the datasets 
+
+```{r}
+
+for (k in 1:nrow(ACS_codes)){
+  ACSdata(k)
+}
+
+
+```
+
+
+```{r testing the inputs, eval=F}
+
+load(here::here("data", "E_HU.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+load(here::here("data", "E_TOTPOP.rda"))
+objectNM <- unique(longACS$SVI_metric)
+assign(objectNM, longACS, pos=1)
+
+
+```
+
+
+
+
