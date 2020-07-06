@@ -1,0 +1,581 @@
+---
+title: "Health Equity Vulnerable Loc // Max Coverage"
+author: "Enterprise Analytics"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y')) `"
+keywords: 
+  - Office
+output: 
+  eaverse::ea_report:
+    analyst: 
+    - "P. Walker"
+    email: "philip.walker@conehealth.com"
+    draft: false
+    code_folding: "show" # one of "show", "hide", or "none"
+    code_download: FALSE # TRUE to allow the Rmd to be downloaded or FALSE
+# knit: eaverse::knit_ea_letter
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE) #echo = FALSE, 
+knitr::opts_chunk$set(fig.align = 'center')
+library(tidyverse)
+library(kableExtra)
+library(eaverse)
+library(sf)
+library(tigris)
+library(leaflet)
+library(leaflet.extras)
+library(maxcovr)
+# To Turn off Scientific Notation Use this.
+options(scipen = 999)
+
+# This cleans up numbers to add decimal places
+knitr::knit_hooks$set(inline = clean_numbers,
+                      dropdown = knit_dropdown,
+                      chunk = ea_hooks)
+```
+
+# Executive Summary {.tabset .tabset-pills}
+
+## Top line review
+
+```{block, summary = TRUE, echo = TRUE}
+__Challenge:__ Our most vulnerable population in Greensboro has a decreased access to care not only due their challenging life situations but also due to the limited available resources within a reasonable distance. This leads to a decreased likelihood of utilizing preventative care and often worse health outcomes for this already at risk population.
+
+__Goal:__ To improve healthcare access to our underserved communities in Greensboro by increasing physical office options.
+
+__Define Success:__  We will have successfully provided recommendations if:  
+
+1.	We have defined the population of interest   
+    *	Utilizing CDC’s Social Vulnerability Index to determine which block groups within Greensboro we should focus our analysis efforts on. (highly vulnerable > 0.8)  
+2.	Access success criteria: Is the office location within reasonable walking distance?   
+    *	Average Euclidian distance < 0.75 mile   
+    *	Covering 60% within 0.75 mile    
+3.	Provided fewest number of additional locations to meet the above items  
+  
+
+__Actions we can take:__  
+
+* Use the model as a tool to help organize our focus on potential locations for new office locations.
+* Compare recommendations to current non-Cone locations, these could be opportunties for partnerships.  
+
+
+```
+
+
+## Data used
+
+```{block, summary = TRUE, echo = TRUE}
+
+The final result combines multiple data sources. Below are the different data sources used.  
+
+* Rebuilt CDC Social Vulnerability Index (SVI) on block group level
+* 2020 projected population on the block level
+* All Cone patients with 1+ encounter(s) (and has a geocoded address) from 2018 to now .  
+* Office Locations from Strategy and Practice Provider tables. 
+    * including Cone offices and Non-Cone offices
+* GSO Open Data portal for parcel data  
+* GTA Bus Stops
+
+```
+
+
+## Methods 
+
+```{block, summary = TRUE, echo = TRUE}
+
+__Current office locations__
+
+* Gather office location data and consolidate from:
+  *	Strategy team
+  * THN Practice Provider locations 
+* Using office locations that CHMG/CHC and have specialties of Family Med, Internists, Pediatrician, OBGYN
+
+
+__Characterize vulnerability range__  
+
+* Using American Community Survey to rebuild the CDC’s Social Vulnerability Index at a more refined level (from tract -> block group)
+* Define “most vulnerable” as communities with an index __> 80%__ (80th percentile)
+
+
+__Characterize current coverage rate__  
+
+* Using highly vulnerable communities to filter down patient encounter information
+* Calculated coverage rate as amount of highly vulnerable patients within a 0.75 mi radius of the nearest Cone office location.
+
+
+__Capture current parcel data__    
+
+* Capture Zone and Land Class types data from GSO Open Data portal    
+    *	Filter down to Office/Retail/Commercial/Industrial related land class and zones  
+
+
+__Propose locations__ 
+
+* Combining all datasets above  
+* Utilize a maximal coverage model to:  
+    1. Assess current coverage 
+    1. Provide a range of recommendations from current parcels that fit the zoning requirements. 
+
+```
+
+
+## Assumptions made
+
+```{block, summary = TRUE, echo = TRUE}
+
+__Items not included in analysis:__ 
+
+*	Recommendations of office characteristics     
+    * Services to provide, hours to be open, staffing required, community/demographic fit    
+*	Recommendations for outreach efforts    
+    *	Effectiveness of fliers/ads, community coordination, behavior change   
+    * Changing perception of current office locations to improve utilization  
+*	Characterization of potential costs   
+    *	Start-up + operations costs  
+    *	Expected reimbursement   
+*	Address-level office recommendations  
+*	Recommendations does not currently include transportation access  
+*	Assessment of other health system patient coverage  
+    *	In terms of patient information, we also don’t have visibility to the people we aren’t currently serving.  
+
+
+```
+
+
+
+# Build Model {.tabset .tabset-pills}
+
+## Read in Data
+
+Setting variables of interest
+```{r, echo=TRUE}
+
+HighVulPCT <- 0.8
+radius <- 0.75
+CoverDist <- radius*1609.34
+
+```
+
+Loading in data built and cleaned in prior steps and them combing them all.
+```{r, echo=TRUE}
+load(file = here::here("data","CurrentOffices.rda")) # Current offices from Strategy and THN Practice Providers
+load(file = here::here("data","GSO_bus_stops.rda")) # for visuals, from GSO GSI team
+load(file = here::here("data","GSO_SVI.rda")) # Rebuilt SVI on block group, filtered down to GSO tracts
+load(file = here::here("data-raw", "LocationsGEO.rda")) #extracted all zoned offices, etc
+
+OfficeGSO <- 
+  LocationsGEO %>%  
+  mutate(y = as.numeric(y),
+         x = as.numeric(x)) %>% 
+  st_as_sf(coords = c('x', 'y'), crs = st_crs(GSO_SVI)) %>% 
+  ungroup()
+
+SVI <- 
+  GSO_SVI %>% 
+  select(GEOID, NAME, PCT, geometry) %>% 
+  separate(NAME, into = c("Block Group", "Tract", "County", "State"), sep = ", ")
+
+GSO_bus_stops <- 
+  GSO_bus_stops %>%  
+  mutate(y = as.numeric(stop_lat),
+         x = as.numeric(stop_lon)) %>% 
+  st_as_sf(coords = c('x', 'y'), crs = st_crs(GSO_SVI))
+
+
+```
+
+```{r}
+OfficeXY <- 
+  OfficeGSO %>% 
+  st_coordinates() %>% 
+  as_tibble() %>%
+  mutate(id = row_number())
+  
+
+Office <- 
+  OfficeGSO %>% 
+  mutate(id = row_number()) %>% 
+  left_join(.,
+            OfficeXY, by = c("id")) %>% 
+  select(-id) %>% 
+  rename(long = X,
+         lat = Y)
+
+rm(OfficeXY, OfficeGSO)
+```
+
+
+
+Setting highly vulnerable from the SVI index for the block group
+
+```{r, echo = T}
+HighVul_Loc <- 
+  SVI %>% 
+  filter(PCT >= HighVulPCT)
+
+```
+
+```{r, eval=F}
+HV_buffer <-
+  SVI %>%
+  filter(lengths(st_touches(., HighVul_Loc)) > 0)
+
+```
+
+
+
+Reading in patient population
+```{r, echo=TRUE}
+load(file = here::here("data-raw", "RecentPatients_Geo.rda")) # Patients with any encounter (and an address) from 2018 to now
+
+PatientsInHighVul <- 
+  Cone_Loca %>% 
+  filter(!FIPS == "") %>% 
+  mutate(Y = as.numeric(Y),
+         X = as.numeric(X)) %>% 
+  st_as_sf(coords = c('X', 'Y'), crs = st_crs(GSO_SVI)) %>% 
+  st_intersection(., HighVul_Loc %>% select(geometry))
+
+rm(Cone_Loca)
+
+```
+
+```{r}
+PatXY <- PatientsInHighVul %>% 
+  st_coordinates() %>% 
+  as_tibble() %>%
+  mutate(id = row_number())
+  
+
+Pats <- 
+  PatientsInHighVul %>% 
+  mutate(id = row_number()) %>% 
+  left_join(.,
+            PatXY, by = c("id")) %>% 
+  select(-id) %>% 
+  rename(long = X,
+         lat = Y)
+
+rm(PatXY, PatientsInHighVul)
+   
+```
+
+
+```{r}
+# Reading in census population proxy
+load(file = here::here("data-raw", "guil_cent_rep.rda"))
+
+CensusPop <- 
+  guil_cent_rep %>% 
+  st_drop_geometry() %>% 
+  st_as_sf(coords = c('lon','lat'), crs = st_crs(GSO_SVI)) %>% 
+  st_intersection(., HighVul_Loc %>% select(geometry))
+
+rm(guil_cent_rep)
+
+```
+
+```{r}
+PopXY <- CensusPop %>% 
+  st_coordinates() %>% 
+  as_tibble() %>%
+  mutate(id = row_number())
+  
+
+Pop <- 
+  CensusPop %>% 
+  mutate(id = row_number()) %>% 
+  left_join(.,
+            PopXY, by = c("id")) %>% 
+  select(-id) %>% 
+  rename(long = X,
+         lat = Y)
+
+rm(CensusPop, PopXY)
+
+```
+
+
+
+## Maxium Coverage {.active}
+
+
+
+```{r}
+# Current Coverage
+ConeLoc_df <- 
+  CurrentOffices %>% 
+  filter(Affli_Group == "Cone") %>% 
+  mutate(id = row_number())
+
+Pats_df <- 
+  Pats %>% 
+  st_drop_geometry()
+
+Pop_df <- 
+  Pop %>% 
+  st_drop_geometry()
+
+Office_df <- 
+  Office %>% 
+  st_drop_geometry()
+
+
+```
+
+```{r, fig.width=12, out.width="100%"}
+
+PatientCov <- bind_rows(
+  coverage(ConeLoc_df, 
+         Pats_df,
+         distance_cutoff = CoverDist) %>% 
+  mutate(Type = "Patient Coverage"),
+  coverage(ConeLoc_df, 
+         Pop_df,
+         distance_cutoff = CoverDist) %>% 
+  mutate(Type = "Census Population Coverage")
+) 
+
+# PatientCov %>% 
+#   kable()
+
+library(gt)
+
+PatientCov %>% 
+  relocate(Type, .before = distance_within) %>% 
+  select(-distance_within) %>% 
+  gt() %>% 
+  tab_header(
+    title = md("**Coverage Summary**"),
+    subtitle = md("Comparing Cone Patients vs Population on block level")
+  ) %>% 
+  fmt_number(
+    columns = vars(n_cov, n_not_cov, dist_avg, dist_sd),
+    suffixing = F,
+    decimals=0
+  ) %>% 
+  fmt_percent(
+    columns = vars(prop_cov, prop_not_cov),
+    decimals = 1
+  )
+
+
+```
+
+
+This contains useful summary information:  
+
+* distance_within - this is the distance used to determine coverage   
+* n_cov - this is the number of events that are covered  
+* n_not_cov - the number of events not covered  
+* pct_cov - the proportion of events covered  
+* pct_not_cov - the proportion of events not covered  
+* dist_avg - the average distance from the rows to the nearest facility or user  
+* dist_avg - the standard deviation of the distance from the rows to the nearest facility or user.  
+
+
+This tells us that out of all the patients living in highly vulnerable locations, __`r  scales::percent(PatientCov$prop_cov[1], accuracy= 0.1)`__ of them live within __`r radius` miles__) of a Cone Office, with the mean distance to a current office location is __2335m (~ 1.5 miles)__.
+
+
+```{r}
+mc_1 <- max_coverage(existing_facility = ConeLoc_df,
+                      proposed_facility = Office_df,
+                      user = Pats_df,
+                      n_added = 1,
+                      distance_cutoff = CoverDist)
+
+# mc_2 <- max_coverage(existing_facility = ConeLoc_df,
+#                       proposed_facility = Office_df,
+#                       user = Pats_df,
+#                       n_added = 2,
+#                       distance_cutoff = CoverDist)
+
+mc_3 <- max_coverage(existing_facility = ConeLoc_df,
+                      proposed_facility = Office_df,
+                      user = Pats_df,
+                      n_added = 3,
+                      distance_cutoff = CoverDist)
+
+# mc_4 <- max_coverage(existing_facility = ConeLoc_df,
+#                       proposed_facility = Office_df,
+#                       user = Pats_df,
+#                       n_added = 4,
+#                       distance_cutoff = CoverDist)
+
+mc_5 <- max_coverage(existing_facility = ConeLoc_df,
+                      proposed_facility = Office_df,
+                      user = Pats_df,
+                      n_added = 5,
+                      distance_cutoff = CoverDist)
+
+```
+
+
+```{r, eval=F}
+mc_1$summary[[1]]
+mc_3$summary[[1]]
+mc_5$summary[[1]]
+
+
+```
+
+```{r, fig.height=6, fig.width=12, out.width="100%", eval=TRUE}
+
+CompareRuns  <- 
+  bind_rows(mc_1$summary[[1]], mc_3$summary[[1]], mc_5$summary[[1]]) %>%
+  unique() %>% 
+  ungroup() 
+  
+CompareRuns %>% 
+ggplot(aes(n_added, pct_cov))+
+    geom_point()+
+    geom_line()+
+    geom_hline(aes(yintercept = 0.6), linetype = "dashed", color="black") +
+    scale_y_continuous(labels = scales::percent_format())+
+    labs(y = "Percent Coverage", x = "Amount of Sites Added",
+         title = "Projected Patient Coverage by Amount of New Sites")
+
+
+```
+
+
+# Results
+
+
+```{r}
+popupPOP <- paste("Name: ", GSO_SVI$NAME,
+                  "<br/>",
+                  "Population: ", scales::comma(GSO_SVI$POP),
+                  "<br/>",
+                  "Social Vulnerability Index: ", scales::percent(GSO_SVI$PCT, accuracy = 1),
+                  sep="") %>%
+  lapply(htmltools::HTML)
+
+
+SVIpal <- colorNumeric(
+  palette = "BuPu",
+  domain = GSO_SVI$PCT
+)
+
+```
+
+
+```{r}
+NonCone_Loc <- 
+  CurrentOffices %>% filter(!Affli_Group == "Cone")
+
+Cone_only <-
+  CurrentOffices %>% filter(Affli_Group == "Cone")
+```
+
+
+
+```{r, fig.height=8, fig.width=6, out.width="100%", eval=TRUE}
+
+leaflet() %>%
+addPolygons(data = GSO_SVI,
+    popup = ~ popupPOP,
+    group = "SVI",
+    fillColor = ~ SVIpal(PCT),
+    color = "#444444",
+    weight = 1,
+    smoothFactor = 0.5,
+    opacity = 1.0,
+    fillOpacity = 0.5,
+    highlightOptions = highlightOptions(
+      color = "white",
+      weight = 2,
+      bringToFront = TRUE
+    ),
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto"
+    )) %>% 
+  addCircles(data = mc_5$facility_selected[[1]], 
+               radius = CoverDist,
+               fill = NULL,
+               opacity = 0.99,
+               weight = 2,
+               color = "green",
+               dashArray = "1,5",
+             group = "Suggested Sites") %>%
+  addCircles(data = Cone_only,
+               radius = CoverDist, #1 mile (in meters)
+               stroke = TRUE,
+               fill = NULL,
+               opacity = 0.99,
+               weight = 2,
+               color = "coral",
+             group = "Cone Locations",
+             popup = Cone_only$GroupedEth) %>%
+    addCircles(data = NonCone_Loc,
+               radius = CoverDist, #1 mile (in meters)
+               stroke = TRUE,
+               fill = NULL,
+               opacity = 0.99,
+               weight = 2,
+               color = "purple",
+             group = "Non-Cone Locations",
+             popup = NonCone_Loc$GroupedEth) %>%
+    addCircleMarkers(data = Pats_df, 
+                     radius = 0.7,
+                     color = "steelblue",
+                     group = "Patients") %>%
+     addCircleMarkers(data = Office_df, 
+                     radius = 1,
+                     color = "green",
+                    popup = Office_df$ZONING,
+                    group = "Zoned Parcels") %>%
+     addCircles(data = GSO_bus_stops, 
+                     radius = 0.75,
+                     group = "GTA stops",
+                     color = "black") %>%
+       addCircles(data = Pop_df, 
+                     radius = 0.75,
+                     group = "Census Population",
+                     color = "lightblue") %>%
+    addProviderTiles(provider= "CartoDB.Positron") %>%  #"Esri.WorldStreetMap") %>%
+    setView(lng = median(Pats$long),
+            lat = median(Pats$lat),
+            zoom = 12) %>% 
+  addLayersControl(
+    overlayGroups = c("SVI","Suggested Sites", "Cone Locations", "Non-Cone Locations", "Patients", 
+                      "Census Population", "Zoned Parcels", "GTA stops"),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>% 
+  addFullscreenControl() %>% 
+  addResetMapButton() %>% 
+  addLegend("bottomleft", colors= c("coral", "purple" ,"steelblue", "green", "black"), labels=c("Cone Offices", "Non-Cone Offices", "Patients", "Parcels", "GTA Stops"), title="") %>% 
+  hideGroup(c("GTA stops", "SVI", "Zoned Parcels", "Census Population", "Non-Cone Locations")) %>% 
+    setMaxBounds(lng1 = min(CurrentOffices$long),
+               lat1 = min(CurrentOffices$lat),
+               lng2 = max(CurrentOffices$long),
+               lat2 = max(CurrentOffices$lat)) %>% 
+  addScaleBar(position = c("bottomleft"), options = scaleBarOptions())
+  # leafem::addLogo(
+  #   img = "img/conelogo.png", src = "local",
+  #   position = c("bottomright"),
+  #   offset.x = 0, offset.y = 10,
+  #   width = 180, height = 40) %>% 
+
+```
+
+
+
+```{r}
+save(GSO_SVI, CurrentOffices,Pats_df,Office_df,GSO_bus_stops,Pop_df, 
+     file = here::here("output", "AllFiles.rda"))
+
+```
+
+
+
+
+
+
+
+
