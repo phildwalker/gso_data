@@ -1,0 +1,205 @@
+---
+title: "GSO Parcel Data"
+author: "Enterprise Analytics"
+date: "`r paste0('Last Updated: ', format(Sys.time(), '%d %B, %Y')) `"
+keywords: 
+  - GSO Parcels
+output: 
+  eaverse::ea_report:
+    analyst: 
+    - "P. Walker"
+    email: "philip.walker@conehealth.com"
+    draft: true
+    code_folding: "show" # one of "show", "hide", or "none"
+    code_download: FALSE # TRUE to allow the Rmd to be downloaded or FALSE
+# knit: eaverse::knit_ea_letter
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+#knitr::opts_chunk$set(fig.align = 'center')
+library(tidyverse)
+library(kableExtra)
+library(eaverse)
+
+# To Turn off Scientific Notation Use this.
+options(scipen = 999)
+
+# This cleans up numbers to add decimal places
+knitr::knit_hooks$set(inline = clean_numbers,
+                      dropdown = knit_dropdown,
+                      chunk = ea_hooks)
+```
+
+
+```{r}
+load(here::here("data-raw", "parcel_info.rda"))
+```
+
+
+how many types
+
+```{r}
+
+ColList <- colnames(parcel_dat) %>% as_tibble
+
+unique(parcel_dat$CITY)
+
+
+unique(parcel_dat$LAND_CLASS)
+#  [1] "RESIDENTIAL"          "TOWNHOUSE"            "COMM"                 "MULTI-FAMILY<4"       "RETAIL"              
+#  [6] "COMMON AREA"          "GOV OWNED"            "IND"                  "APART"                NA                    
+# [11] "OFFICE"               "CONDO"                "VACANT"               "UTILITY USE"          "QUARR"               
+# [16] "DEVELOPMT RESTRICTED" "INSTITUTIONAL"        "MH PARK"              "SCHOOL/COLL/UNIV"     "HOTEL/MOTEL"         
+# [21] "GOLF COURSE"          "Unknown Owner"        "PETROL/GAS"           "REC/PARK"             "FUNERAL HM/CEMETERY" 
+# [26] "ASSIST LIV/SKILLCARE" "AGRI/HORT"            "SINGLE WIDE MH"       "MFG HOM"              "DRAINAGE LOT"        
+# [31] "MULTI-FAMILY5>"       "LEASED"               "TWINHOME"             "AIRPORT"              "NONE"                
+# [36] "RAILROAD CORRIDOR"    "MED"  
+
+
+
+# unique(parcel_dat$TAXABLE_STATUS)
+
+
+LandGroups <- c("COMM", "RETAIL")
+
+```
+
+
+```{r}
+
+SmalSamp <-
+  parcel_dat %>% 
+  head(6) %>% 
+  mutate_all(as.character) %>% 
+  mutate(ID = row_number()) %>% 
+  # group_by(ID) %>% 
+  pivot_longer(cols= -ID, names_to = "colnam", values_to = "sample") %>% 
+  pivot_wider(names_from = ID, values_from = sample)
+  
+
+
+```
+
+
+
+```{r}
+Cone <- 
+  parcel_dat %>% 
+  # filter(str_detect(PROPERTY_DESCR, "CONE")) %>% 
+  filter(str_detect(PROPERTY_OWNER,  "MOSES H CONE")) %>% 
+  select(ZONING, PROPERTY_DESCR, CITY, LAND_CLASS, PROPERTY_OWNER, starts_with("PHYADDR_")) %>% 
+  mutate(Address = as.character(glue::glue("{PHYADDR_STR_NUM} {PHYADDR_DIR_PFX} {PHYADDR_STR} {PHYADDR_STR_TYPE}, {PHYADDR_CITY}, {PHYADDR_STATE}, {PHYADDR_ZIP}"))) %>% 
+  select(-starts_with("PHYADDR_"))
+
+Cone %>% 
+  count(LAND_CLASS, ZONING, sort = T)
+
+
+OfficeLOC <-
+  parcel_dat %>% 
+  filter(str_detect(ZONING, "Office|Institution|Industrial|Business"), 
+         !LAND_CLASS %in% c("GOV OWNED", "VACANT", "REC/PARK", "FUNERAL HM/CEMETERY", "DRAINAGE LOT", "ASSIST LIV/SKILLCARE",
+                            "DEVELOPMT RESTRICTED", "SCHOOL/COLL/UNIV", "UTILITY USE", "PETROL/GAS", "QUARR",
+                            "MULTI-FAMILY5>", "AIRPORT", "AGRI/HORT", "HOTEL/MOTEL", "MFG HOM", "Unknown Owner",
+                            "RESIDENTIAL", "INSTITUTIONAL"),
+         PHYADDR_CITY %in% c("GREENSBORO"),
+         !is.na(PHYADDR_ZIP),
+         # !ZONING %in% c("HB-Highway Business", "CU-HB-Highway Business", "HI-Heavy Industrial"),
+         !str_detect(ZONING, "HB-Highway |HI-Heavy "))
+
+
+OfficeLOC %>%
+  count(LAND_CLASS, sort = T) #ZONING,
+
+OfficeLOC %>%
+  count(ZONING, sort = T) #ZONING,
+
+Dtl <- OfficeLOC %>% 
+  # filter(LAND_CLASS %in% c("IND")) %>% #,str_detect(PROPERTY_OWNER, " LLC")
+  # filter(ZONING %in% c("HI-Heavy Industrial")) %>% 
+  # filter(str_detect(ZONING, "GO-H-General Office, High")) %>% 
+  select(ZONING, PROPERTY_DESCR, BLDG_DESC, CITY, LAND_CLASS, PROPERTY_OWNER, starts_with("PHYADDR_")) %>% 
+  mutate(Address = as.character(glue::glue("{PHYADDR_STR_NUM} {PHYADDR_DIR_PFX} {PHYADDR_STR} {PHYADDR_STR_TYPE}, {PHYADDR_CITY}, {PHYADDR_STATE} {PHYADDR_ZIP}"))) %>% 
+  select(-starts_with("PHYADDR_"))
+
+
+
+UNQ_add <-
+  Dtl %>% 
+  distinct(Address) %>%
+  rename(addresses = Address) %>% 
+  mutate(id = row_number())
+
+
+
+
+
+
+```
+
+
+```{r}
+library(safegeocode)
+
+
+Add_Geo <-
+  batch_geocode(UNQ_add)
+
+
+CleanGeo <-
+  Add_Geo %>% 
+  filter(region_a == "NC",
+         county == "Guilford County") %>% 
+  group_by(user_id) %>% 
+  mutate(rownm = row_number()) %>% 
+  filter(rownm == 1) %>% 
+  select(name, x, y)
+
+
+
+GEOlkup <-
+  UNQ_add %>% 
+  left_join(.,
+            CleanGeo, by = c("id" = "user_id")) %>% 
+  select(-id, -name)
+
+LocationsGEO <-
+  Dtl %>% 
+  left_join(., 
+            GEOlkup, by = c("Address" = "addresses"))
+
+
+save(LocationsGEO, file= here::here("data", "LocationsGEO.rda"))
+```
+
+
+
+
+```{r}
+LookingParksRec <- 
+  parcel_dat %>% 
+  filter(OBJECTID == 20359) %>% 
+  mutate_all(as.character) %>% 
+  mutate(ID = row_number()) %>% 
+  # group_by(ID) %>% 
+  pivot_longer(cols= -ID, names_to = "colnam", values_to = "sample") %>% 
+  pivot_wider(names_from = ID, values_from = sample)
+  
+  # filter(PHYADDR_STR == "ORCHARD")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
